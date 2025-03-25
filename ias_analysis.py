@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.11.26"
-app = marimo.App(width="medium")
+app = marimo.App(width="medium", auto_download=["html"])
 
 
 @app.cell
@@ -21,44 +21,17 @@ def _():
 
 @app.cell
 def _(pl):
+    # Load all required columns at once
     ias_raw = pl.read_excel(
         "data/Inflation Attitudes Survey Feb 2025.xlsx",
         sheet_name="Dataset",
-        columns=["weight", "yyyyqq", 'age', 'q2a_agg1', 'q2b_agg1', 'q2c_agg1']
+        columns=[
+            "weight", "yyyyqq", "age", 
+            "work", "class", "tenure", "income", "sreg",
+            "q2a_agg1", "q2b_agg1", "q2c_agg1"
+        ]
     )
-    ias_raw.head()
     return (ias_raw,)
-
-
-@app.cell
-def _():
-    q2_agg_ias_class_bounds = {
-        "1": (-1.0, 1.0),   # Down by 1% or less
-        "2": (-2.0, 1.0),   # Down by 1% to <2%
-        "3": (-3.0, 1.0),
-        "4": (-4.0, 1.0),
-        "5": (-5.0, 1.0),
-        "6": (-6.0, 1.0),   # Down by 5% or more (approx.)
-        "7": (0.0, 0.0),    # Not changed
-        "8": (0.0, 1.0),
-        "9": (1.0, 1.0),
-        "10": (2.0, 1.0),
-        "11": (3.0, 1.0),
-        "12": (4.0, 1.0),
-        "13": (5.0, 1.0),
-        "14": (6.0, 1.0),
-        "15": (7.0, 1.0),
-        "16": (8.0, 1.0),
-        "17": (9.0, 1.0),
-        "18": (10.0, 1.0),  # Up by 10% or more (approx.)
-        "20": (10.0, 1.0),  # Up by 10% to <11%
-        "21": (11.0, 1.0),
-        "22": (12.0, 1.0),
-        "23": (13.0, 1.0),
-        "24": (14.0, 1.0),
-        "25": (15.0, 5.0),  # Up by 15% or more (extended width)
-    }
-    return (q2_agg_ias_class_bounds,)
 
 
 @app.cell
@@ -151,24 +124,12 @@ def _(Dict, Optional, Tuple, pd, pl):
 
 
 @app.cell
-def _(
-    clean_ias,
-    compute_grouped_medians_polars,
-    ias_raw,
-    q2_agg_ias_class_bounds,
-):
-    ias_clean = clean_ias(ias_raw)
-    q2a_median_by_age, q2b_median_by_age, q2c_median_by_age = compute_grouped_medians_polars(ias_clean, q2_agg_ias_class_bounds)
-    return ias_clean, q2a_median_by_age, q2b_median_by_age, q2c_median_by_age
-
-
-@app.cell
 def _(Dict, go, pd):
-    def plot_question_medians(df: pd.DataFrame, label_mapping: Dict[str, str] | None = None, title: str = "Grouped Median by Age"):
+    def plot_question_medians(df: pd.DataFrame, label_mapping: Dict[str, str] | None = None, title: str = "Grouped Median"):
         # Convert to Pandas for Plotly compatibility
         pdf = df.to_pandas()
 
-        # Rename age columns
+        # Rename columns
         if label_mapping:
             pdf = pdf.rename(columns={code: label for code, label in label_mapping.items() if code in pdf.columns})
 
@@ -178,7 +139,7 @@ def _(Dict, go, pd):
         # Create Plotly line chart
         fig = go.Figure()
 
-        for grp in df_melted["Group"].unique():
+        for grp in sorted(df_melted["Group"].unique()):
             group_data = df_melted[df_melted["Group"] == grp]
             fig.add_trace(go.Scatter(
                 x=group_data["yyyyqq"],
@@ -197,34 +158,8 @@ def _(Dict, go, pd):
         )
 
         fig.show()
-
-    age_map = {
-        "1": "15-24",
-        "2": "25-34",
-        "3": "35-44",
-        "4": "45-54",
-        "5": "55-64",
-        "6": "65+"
-    }
-    return age_map, plot_question_medians
-
-
-@app.cell
-def _(age_map, plot_question_medians, q2a_median_by_age):
-    plot_question_medians(q2a_median_by_age, age_map, title="Year ahead inflation expectations by age")
-    return
-
-
-@app.cell
-def _(age_map, plot_question_medians, q2b_median_by_age):
-    plot_question_medians(q2b_median_by_age, age_map, title="2-year ahead inflation expectations by age")
-    return
-
-
-@app.cell
-def _(age_map, plot_question_medians, q2c_median_by_age):
-    plot_question_medians(q2c_median_by_age, age_map, title="5-Year ahead inflation expectations by age")
-    return
+        return fig
+    return (plot_question_medians,)
 
 
 @app.cell
@@ -262,6 +197,7 @@ def _(
 
         return df
 
+    ### THIS IS WHERE THE CALCULATION LOGIC SITS
     def comp_grouped_medians(
         df: pl.DataFrame,
         class_bounds: Dict[str, Tuple[float, float]],
@@ -312,73 +248,44 @@ def _(
 
 
 @app.cell
-def _(clean_ias_generic, comp_grouped_medians, pl, q2_agg_ias_class_bounds):
-    # Employment status analysis
-    ias_raw_work = pl.read_excel(
-        "data/Inflation Attitudes Survey Feb 2025.xlsx",
-        sheet_name="Dataset",
-        columns=['weight', 'yyyyqq', 'work', 'q2a_agg1', 'q2b_agg1', 'q2c_agg1']
-    )
-    df_clean_work = clean_ias_generic(ias_raw_work, 'work')
-    median_dfs_work = comp_grouped_medians(df_clean_work, q2_agg_ias_class_bounds, disagg_col="work")
-
-    # Class status analysis
-    ias_raw_class = pl.read_excel(
-        "data/Inflation Attitudes Survey Feb 2025.xlsx",
-        sheet_name="Dataset",
-        columns=['weight', 'yyyyqq', 'class', 'q2a_agg1', 'q2b_agg1', 'q2c_agg1']
-    )
-    df_clean_class = clean_ias_generic(ias_raw_class, 'class')
-    median_dfs_class = comp_grouped_medians(df_clean_class, q2_agg_ias_class_bounds, disagg_col="class")
-
-    # Housing tenure analysis
-    ias_raw_tenure = pl.read_excel(
-        "data/Inflation Attitudes Survey Feb 2025.xlsx",
-        sheet_name="Dataset",
-        columns=['yyyyqq', 'tenure', 'q2a_agg1', 'q2b_agg1', 'q2c_agg1']
-    )
-    df_clean_tenure = clean_ias_generic(ias_raw_tenure, 'tenure')
-    median_dfs_tenure = comp_grouped_medians(df_clean_tenure, q2_agg_ias_class_bounds, disagg_col="tenure")
-
-    # Income analysis
-    ias_raw_income = pl.read_excel(
-        "data/Inflation Attitudes Survey Feb 2025.xlsx",
-        sheet_name="Dataset",
-        columns=['yyyyqq', 'income', 'q2a_agg1', 'q2b_agg1', 'q2c_agg1']
-    )
-    df_clean_income = clean_ias_generic(ias_raw_income, 'income')
-    median_dfs_income = comp_grouped_medians(df_clean_income, q2_agg_ias_class_bounds, disagg_col="income")
-
-    # Region analysis
-    ias_raw_sreg = pl.read_excel(
-        "data/Inflation Attitudes Survey Feb 2025.xlsx",
-        sheet_name="Dataset",
-        columns=['yyyyqq', 'sreg', 'q2a_agg1', 'q2b_agg1', 'q2c_agg1']
-    )
-    df_clean_sreg = clean_ias_generic(ias_raw_sreg, 'sreg')
-    median_dfs_sreg = comp_grouped_medians(df_clean_sreg, q2_agg_ias_class_bounds, disagg_col="sreg")
-    return (
-        df_clean_class,
-        df_clean_income,
-        df_clean_sreg,
-        df_clean_tenure,
-        df_clean_work,
-        ias_raw_class,
-        ias_raw_income,
-        ias_raw_sreg,
-        ias_raw_tenure,
-        ias_raw_work,
-        median_dfs_class,
-        median_dfs_income,
-        median_dfs_sreg,
-        median_dfs_tenure,
-        median_dfs_work,
-    )
-
-
-@app.cell
 def _():
     # Mapping dictionaries for different categories
+    q2_agg_ias_class_bounds = {
+        "1": (-1.0, 1.0),   # Down by 1% or less
+        "2": (-2.0, 1.0),   # Down by 1% to <2%
+        "3": (-3.0, 1.0),
+        "4": (-4.0, 1.0),
+        "5": (-5.0, 1.0),
+        "6": (-6.0, 1.0),   # Down by 5% or more (approx.)
+        "7": (0.0, 0.0),    # Not changed
+        "8": (0.0, 1.0),
+        "9": (1.0, 1.0),
+        "10": (2.0, 1.0),
+        "11": (3.0, 1.0),
+        "12": (4.0, 1.0),
+        "13": (5.0, 1.0),
+        "14": (6.0, 1.0),
+        "15": (7.0, 1.0),
+        "16": (8.0, 1.0),
+        "17": (9.0, 1.0),
+        "18": (10.0, 1.0),  # Up by 10% or more (approx.)
+        "20": (10.0, 1.0),  # Up by 10% to <11%
+        "21": (11.0, 1.0),
+        "22": (12.0, 1.0),
+        "23": (13.0, 1.0),
+        "24": (14.0, 1.0),
+        "25": (15.0, 5.0),  # Up by 15% or more (extended width)
+    }
+
+    age_map = {
+        "1": "15-24",
+        "2": "25-34",
+        "3": "35-44",
+        "4": "45-54",
+        "5": "55-64",
+        "6": "65+"
+    }
+
     emp_map = {
         "1": "Full or Part Time",
         "2": "Unemployed"
@@ -398,60 +305,147 @@ def _():
         "4": "Wales and West",
         "5": "South East"
     }
-    return class_mapping, emp_map, sreg_bands
+
+    housing_map = {
+        "1": "Owned outright",
+        "2": "Mortgage",
+        "3": "Council Rent",
+        "4": "Other"
+    }
+
+    income_map = {
+        "1": "<9500 [option removed 2022 Feb]",
+        "2": "9500-17499 [option removed 2022 Feb]",
+        "3": "17500-24999 [option removed 2022 Feb]",
+        "4": ">25000 [option removed from 2016 Feb]",
+        "5": "25000-39999 [option added 2016 Feb, option removed 2022 Feb]",
+        "6": ">40000 [option added 2016 Feb, option removed 2022 Feb]",
+        "7": "<9999 [option added 2022 Feb]",
+        "8": "10000-19999 [option added 2022 Feb]",
+        "9": "20000-34999 [option added 2022 Feb]",
+        "10": "35000-44999 [option added 2022 Feb]",
+        "11": ">45000 [option added 2022 Feb]",
+        "12": "Prefer not to answer [option added 2022 Feb]"
+    }
+    return (
+        age_map,
+        class_mapping,
+        emp_map,
+        housing_map,
+        income_map,
+        q2_agg_ias_class_bounds,
+        sreg_bands,
+    )
 
 
 @app.cell
-def _(emp_map, median_dfs_work, plot_question_medians):
-    plot_question_medians(median_dfs_work[0], emp_map, '1 year ahead inflation expectations by employment status')
+def _(
+    clean_ias,
+    clean_ias_generic,
+    comp_grouped_medians,
+    ias_raw,
+    q2_agg_ias_class_bounds,
+):
+    # Create all analyses from the same base DataFrame
+    analyses = {
+        'age': clean_ias_generic(ias_raw, 'age'),
+        'work': clean_ias_generic(ias_raw, 'work'),
+        'class': clean_ias_generic(ias_raw, 'class'),
+        'tenure': clean_ias_generic(ias_raw, 'tenure'),
+        'income': clean_ias_generic(ias_raw, 'income'),
+        'sreg': clean_ias_generic(ias_raw, 'sreg')
+    }
+
+    ias_clean = clean_ias(ias_raw)
+
+    # Compute medians for each analysis
+    median_results = {
+        category: comp_grouped_medians(df, q2_agg_ias_class_bounds, disagg_col=category)
+        for category, df in analyses.items()
+    }
+    return analyses, ias_clean, median_results
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## IE by Age""")
     return
 
 
 @app.cell
-def _(emp_map, median_dfs_work, plot_question_medians):
-    plot_question_medians(median_dfs_work[1], emp_map, '2 year ahead inflation expectations by employment status')
+def _(age_map, median_results, plot_question_medians):
+    plot_question_medians(median_results['age'][0], age_map, "1 year ahead inflation expectations by age")
+    plot_question_medians(median_results['age'][1], age_map, "2 year ahead inflation expectations by age")
+    plot_question_medians(median_results['age'][2], age_map, "5 year ahead inflation expectations by age")
     return
 
 
 @app.cell
-def _(emp_map, median_dfs_work, plot_question_medians):
-    plot_question_medians(median_dfs_work[2], emp_map, '5 year ahead inflation expectations by employment status')
+def _(mo):
+    mo.md(r"""## IE by employment status""")
     return
 
 
 @app.cell
-def _(class_mapping, median_dfs_class, plot_question_medians):
-    plot_question_medians(median_dfs_class[0], class_mapping, '1 year ahead inflation expectations by class status')
+def _(emp_map, median_results, plot_question_medians):
+    plot_question_medians(median_results['work'][0], emp_map, "1 year ahead inflation expectations by employment")
+    plot_question_medians(median_results['work'][1], emp_map, "2 year ahead inflation expectations by employment")
+    plot_question_medians(median_results['work'][2], emp_map, "5 year ahead inflation expectations by employment")
     return
 
 
 @app.cell
-def _(class_mapping, median_dfs_class, plot_question_medians):
-    plot_question_medians(median_dfs_class[1], class_mapping, '2 year ahead inflation expectations by class status')
+def _():
     return
 
 
 @app.cell
-def _(class_mapping, median_dfs_class, plot_question_medians):
-    plot_question_medians(median_dfs_class[2], class_mapping, '5 year ahead inflation expectations by class status')
+def _(class_mapping, median_results, plot_question_medians):
+    plot_question_medians(median_results['class'][0], class_mapping, "1 year ahead inflation expectations by class")
+    plot_question_medians(median_results['class'][1], class_mapping, "2 year ahead inflation expectations by class")
+    plot_question_medians(median_results['class'][2], class_mapping, "5 year ahead inflation expectations by class")
     return
 
 
 @app.cell
-def _(median_dfs_sreg, plot_question_medians, sreg_bands):
-    plot_question_medians(median_dfs_sreg[0], sreg_bands, '1 year ahead inflation expectations by region')
+def _(mo):
+    mo.md(r"""## IE by housing tenure""")
     return
 
 
 @app.cell
-def _(median_dfs_sreg, plot_question_medians, sreg_bands):
-    plot_question_medians(median_dfs_sreg[1], sreg_bands, '2 year ahead inflation expectations by region')
+def _(housing_map, median_results, plot_question_medians):
+    plot_question_medians(median_results['tenure'][0], housing_map, "1 year ahead inflation expectations by tenure")
+    plot_question_medians(median_results['tenure'][1], housing_map, "2 year ahead inflation expectations by tenure")
+    plot_question_medians(median_results['tenure'][2], housing_map, "5 year ahead inflation expectations by tenure")
     return
 
 
 @app.cell
-def _(median_dfs_sreg, plot_question_medians, sreg_bands):
-    plot_question_medians(median_dfs_sreg[2], sreg_bands, '5 year ahead inflation expectations by region')
+def _(mo):
+    mo.md(r"""## IE by income""")
+    return
+
+
+@app.cell
+def _(income_map, median_results, plot_question_medians):
+    plot_question_medians(median_results['income'][0], income_map, "1 year ahead inflation expectations by income")
+    plot_question_medians(median_results['income'][1], income_map, "2 year ahead inflation expectations by income")
+    plot_question_medians(median_results['income'][2], income_map, "5 year ahead inflation expectations by income")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## IE by region (sreg)""")
+    return
+
+
+@app.cell
+def _(median_results, plot_question_medians, sreg_bands):
+    plot_question_medians(median_results['sreg'][0], sreg_bands, "1 year ahead inflation expectations by sreg")
+    plot_question_medians(median_results['sreg'][1], sreg_bands, "2 year ahead inflation expectations by sreg")
+    plot_question_medians(median_results['sreg'][2], sreg_bands, "5 year ahead inflation expectations by sreg")
     return
 
 
@@ -464,262 +458,219 @@ def _():
 
 @app.cell
 def _(convert_yyyyqq_to_datetime, ias_clean, pl):
-    # First, calculate total weights by age group and timestamp
-    total_weights_1yr = (
-        ias_clean
-        .group_by(["yyyyqq", "age"])
-        .agg(pl.col("weight").sum().alias("total_weight"))
-    )
+    ### THIS IS WHERE THE CALCULATION LOGIC SITS
+    def calc_dk_proportions_by_category(df, category_col="age"):
+        """Calculate Don't Know proportions for all horizons for a given category"""
 
-    # Calculate weights for "Don't Know" responses
-    dk_by_age = (
-        ias_clean
-        .filter(pl.col("q2a_agg1") == "19")
-        .group_by(["yyyyqq", "age"])
-        .agg(pl.col("weight").sum().alias("dk_weight"))
-    )
+        def calc_single_horizon(question_col):
+            # Calculate total weights by category and timestamp
+            total_weights = (
+                df
+                .group_by(["yyyyqq", category_col])
+                .agg(pl.col("weight").sum().alias("total_weight"))
+            )
 
-    # Join the two tables and calculate proportions
-    dk_proportions = (
-        dk_by_age
-        .join(total_weights_1yr, on=["yyyyqq", "age"], how="right")
-        .with_columns([
-            (pl.col("dk_weight") / pl.col("total_weight")).alias("proportion")
-        ])
-        .fill_null(0)  # Fill NaN with 0 for age groups with no "Don't Know" responses
-        .sort(["yyyyqq", "age"])
-    )
+            # Calculate weights for all "Don't Know" responses for a question, grouped by timestamp and category (e.g. age)
+            dk_weights = (
+                df
+                .filter(pl.col(question_col) == "19")
+                .group_by(["yyyyqq", category_col])
+                .agg(pl.col("weight").sum().alias("dk_weight"))
+            )
 
-    # Convert yyyyqq to datetime
-    dk_proportions = dk_proportions.with_columns([
-        pl.col("yyyyqq").map_elements(lambda x: convert_yyyyqq_to_datetime(str(x))).alias("date")
-    ])
+            # Join and calculate proportions (for each timestamp, divide the weight of the category's don't knows by the weight of the category's total responses)
+            proportions = (
+                dk_weights
+                .join(total_weights, on=["yyyyqq", category_col], how="right")
+                .with_columns([
+                    (pl.col("dk_weight") / pl.col("total_weight")).alias("proportion")
+                ])
+                .fill_null(0)
+                .sort(["yyyyqq", category_col])
+            )
 
-    # Pivot the data to create columns for each age group
-    dk_props_pivoted = dk_proportions.pivot(
-        values="proportion",
-        index="date", 
-        on="age",
-        aggregate_function="first"
-    ).sort("date")
+            # Add datetime column and pivot
+            proportions = proportions.with_columns([
+                pl.col("yyyyqq").map_elements(lambda x: convert_yyyyqq_to_datetime(str(x))).alias("date")
+            ])
 
-    # Convert to pandas for plotting
-    dk_props_pd_1yr = dk_props_pivoted.to_pandas()
+            props_pivoted = proportions.pivot(
+                values="proportion",
+                index="date",
+                on=category_col,
+                aggregate_function="first"
+            ).sort("date")
+
+            return proportions, props_pivoted.to_pandas()
+
+        # Calculate for all three horizons
+        results = {
+            '1yr': calc_single_horizon("q2a_agg1"),
+            '2yr': calc_single_horizon("q2b_agg1"),
+            '5yr': calc_single_horizon("q2c_agg1")
+        }
+
+        return results
+
+    # Calculate DK proportions for each category
+    dk_results = {
+        'age': calc_dk_proportions_by_category(ias_clean, "age"),
+        'work': calc_dk_proportions_by_category(ias_clean, "work"),
+        'class': calc_dk_proportions_by_category(ias_clean, "class"),
+        'income': calc_dk_proportions_by_category(ias_clean, "income"),
+        'sreg': calc_dk_proportions_by_category(ias_clean, "sreg")
+    }
+    return calc_dk_proportions_by_category, dk_results
+
+
+@app.cell
+def _(
+    Dict,
+    age_map,
+    class_mapping,
+    dk_results,
+    emp_map,
+    go,
+    income_map,
+    pd,
+    sreg_bands,
+):
+    def plot_dk_proportions(df: pd.DataFrame, label_mapping: Dict[str, str] | None = None, title: str = "Don't Know Responses"):
+        fig = go.Figure()
+
+        for col in sorted(df.columns):
+            if col != "date":  # Skip the datetime column
+                name = label_mapping.get(str(col), str(col))
+                fig.add_trace(go.Scatter(
+                    x=df["date"],
+                    y=df[col],
+                    mode='lines+markers',
+                    name=name
+                ))
+
+        fig.update_layout(
+            title=title,
+            xaxis_title="Quarter",
+            yaxis_title="Proportion",
+            legend_title="Group",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+
+        fig.show()
+        return fig
+
+    # Plot DK proportions for all categories and horizons
+    horizons = {
+        '1yr': "1 year ahead",
+        '2yr': "2 years ahead",
+        '5yr': "5 years ahead"
+    }
+
+    category_titles = {
+        'age': 'by age',
+        'work': 'by employment status',
+        'class': 'by class status',
+        'income': 'by income',
+        'sreg': 'by region'
+    }
+
+    category_maps = {
+        'age': age_map,
+        'work': emp_map,
+        'class': class_mapping,
+        'income': income_map,
+        'sreg': sreg_bands
+    }
+
+    dk_figures = {}
+    for cat, res in dk_results.items():
+        dk_figures[cat] = {}
+        for hrz, (_, res_df) in res.items():
+            title = f"Proportion of 'Don't Know' responses {horizons[hrz]} {category_titles[cat]}"
+            fig = plot_dk_proportions(
+                res_df,
+                label_mapping=category_maps.get(cat),
+                title=title
+            )
+            dk_figures[cat][hrz] = fig
     return (
-        dk_by_age,
-        dk_proportions,
-        dk_props_pd_1yr,
-        dk_props_pivoted,
-        total_weights_1yr,
+        cat,
+        category_maps,
+        category_titles,
+        dk_figures,
+        fig,
+        horizons,
+        hrz,
+        plot_dk_proportions,
+        res,
+        res_df,
+        title,
     )
 
 
 @app.cell
-def _(convert_yyyyqq_to_datetime, ias_clean, pl):
-    # Same calculation for 2-year ahead expectations
-    total_weights_2yr = (
-        ias_clean
-        .group_by(["yyyyqq", "age"])
-        .agg(pl.col("weight").sum().alias("total_weight"))
-    )
-
-    dk_by_age_2yr = (
-        ias_clean
-        .filter(pl.col("q2b_agg1") == "19")
-        .group_by(["yyyyqq", "age"])
-        .agg(pl.col("weight").sum().alias("dk_weight"))
-    )
-
-    dk_proportions_2yr = (
-        dk_by_age_2yr
-        .join(total_weights_2yr, on=["yyyyqq", "age"], how="right")
-        .with_columns([
-            (pl.col("dk_weight") / pl.col("total_weight")).alias("proportion")
-        ])
-        .fill_null(0)
-        .sort(["yyyyqq", "age"])
-    )
-
-    dk_proportions_2yr = dk_proportions_2yr.with_columns([
-        pl.col("yyyyqq").map_elements(lambda x: convert_yyyyqq_to_datetime(str(x))).alias("date")
-    ])
-
-    dk_props_pivoted_2yr = dk_proportions_2yr.pivot(
-        values="proportion",
-        index="date", 
-        on="age",
-        aggregate_function="first"
-    ).sort("date")
-
-    dk_props_pd_2yr = dk_props_pivoted_2yr.to_pandas()
-    return (
-        dk_by_age_2yr,
-        dk_proportions_2yr,
-        dk_props_pd_2yr,
-        dk_props_pivoted_2yr,
-        total_weights_2yr,
-    )
+def _(mo):
+    mo.md(r"""# Write to Excel""")
+    return
 
 
 @app.cell
-def _(convert_yyyyqq_to_datetime, ias_clean, pl):
-    # Same calculation for 5-year ahead expectations
-    total_weights_5yr = (
-        ias_clean
-        .group_by(["yyyyqq", "age"])
-        .agg(pl.col("weight").sum().alias("total_weight"))
-    )
-
-    dk_by_age_5yr = (
-        ias_clean
-        .filter(pl.col("q2c_agg1") == "19")
-        .group_by(["yyyyqq", "age"])
-        .agg(pl.col("weight").sum().alias("dk_weight"))
-    )
-
-    dk_proportions_5yr = (
-        dk_by_age_5yr
-        .join(total_weights_5yr, on=["yyyyqq", "age"], how="right")
-        .with_columns([
-            (pl.col("dk_weight") / pl.col("total_weight")).alias("proportion")
-        ])
-        .fill_null(0)
-        .sort(["yyyyqq", "age"])
-    )
-
-    dk_proportions_5yr = dk_proportions_5yr.with_columns([
-        pl.col("yyyyqq").map_elements(lambda x: convert_yyyyqq_to_datetime(str(x))).alias("date")
-    ])
-
-    dk_props_pivoted_5yr = dk_proportions_5yr.pivot(
-        values="proportion",
-        index="date", 
-        on="age",
-        aggregate_function="first"
-    ).sort("date")
-
-    dk_props_pd_5yr = dk_props_pivoted_5yr.to_pandas()
-    return (
-        dk_by_age_5yr,
-        dk_proportions_5yr,
-        dk_props_pd_5yr,
-        dk_props_pivoted_5yr,
-        total_weights_5yr,
-    )
-
-
-@app.cell
-def _(age_map, dk_props_pd_1yr, go):
-    # Create the plot for 1-year ahead expectations
-    fig_1yr = go.Figure()
-
-    # Plot each age group
-    for age_col_1yr in dk_props_pd_1yr.columns:
-        if age_col_1yr != "date":  # Skip the datetime column
-            fig_1yr.add_trace(go.Scatter(
-                x=dk_props_pd_1yr["date"],
-                y=dk_props_pd_1yr[age_col_1yr],
-                mode='lines+markers',
-                name=age_map[str(age_col_1yr)]
-            ))
-
-    fig_1yr.update_layout(
-        title="Proportion of 'Don't Know' Responses Within Each Age Group (1 year ahead)",
-        xaxis_title="Quarter",
-        yaxis_title="Proportion",
-        legend_title="Age Group",
-        template="plotly_white",
-        hovermode="x unified"
-    )
-
-    fig_1yr.show()
-    return age_col_1yr, fig_1yr
-
-
-@app.cell
-def _(age_map, dk_props_pd_2yr, go):
-    # Create the plot for 2-year ahead expectations
-    fig_2yr = go.Figure()
-
-    # Plot each age group
-    for age_col_2yr in dk_props_pd_2yr.columns:
-        if age_col_2yr != "date":  # Skip the datetime column
-            fig_2yr.add_trace(go.Scatter(
-                x=dk_props_pd_2yr["date"],
-                y=dk_props_pd_2yr[age_col_2yr],
-                mode='lines+markers',
-                name=age_map[str(age_col_2yr)]
-            ))
-
-    fig_2yr.update_layout(
-        title="Proportion of 'Don't Know' Responses Within Each Age Group (2 years ahead)",
-        xaxis_title="Quarter",
-        yaxis_title="Proportion",
-        legend_title="Age Group",
-        template="plotly_white",
-        hovermode="x unified"
-    )
-
-    fig_2yr.show()
-    return age_col_2yr, fig_2yr
-
-
-@app.cell
-def _(age_map, dk_props_pd_5yr, go):
-    # Create the plot for 5-year ahead expectations
-    fig_5yr = go.Figure()
-
-    # Plot each age group
-    for age_col_5yr in dk_props_pd_5yr.columns:
-        if age_col_5yr != "date":  # Skip the datetime column
-            fig_5yr.add_trace(go.Scatter(
-                x=dk_props_pd_5yr["date"],
-                y=dk_props_pd_5yr[age_col_5yr],
-                mode='lines+markers',
-                name=age_map[str(age_col_5yr)]
-            ))
-
-    fig_5yr.update_layout(
-        title="Proportion of 'Don't Know' Responses Within Each Age Group (5 years ahead)",
-        xaxis_title="Quarter",
-        yaxis_title="Proportion",
-        legend_title="Age Group",
-        template="plotly_white",
-        hovermode="x unified"
-    )
-
-    fig_5yr.show()
-    return age_col_5yr, fig_5yr
-
-
-@app.cell
-def _(age_map, dk_props_pd_1yr, dk_props_pd_2yr, dk_props_pd_5yr, pd):
+def _(category_maps, dk_results, pd):
     # Create Excel writer object
-    with pd.ExcelWriter("dont_knows_by_age.xlsx") as writer:
-        # Rename columns using age_map for each DataFrame
-        dk_1yr = dk_props_pd_1yr.rename(columns={col: age_map[str(col)] for col in dk_props_pd_1yr.columns if col != 'date'})
-        dk_2yr = dk_props_pd_2yr.rename(columns={col: age_map[str(col)] for col in dk_props_pd_2yr.columns if col != 'date'})
-        dk_5yr = dk_props_pd_5yr.rename(columns={col: age_map[str(col)] for col in dk_props_pd_5yr.columns if col != 'date'})
+    def dk_write_wrapper():
+        with pd.ExcelWriter("dont_knows_by_category.xlsx") as writer:
+            for category, results in dk_results.items():
+                for horizon, (_, df) in results.items():
+                    # Get the appropriate mapping if it exists
+                    mapping = category_maps.get(category, {})
+                    if mapping:
+                        df = df.rename(columns={col: mapping.get(str(col), str(col)) for col in df.columns if col != 'date'})
 
-        # Write each DataFrame to a different sheet
-        dk_1yr.to_excel(
-            writer,
-            sheet_name="1yr_ahead",
-            index=True
-        )
+                    # Write to Excel with sheet name combining category and horizon
+                    sheet_name = f"{category}_{horizon}"
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        dk_2yr.to_excel(
-            writer, 
-            sheet_name="2yr_ahead",
-            index=True
-        )
+    dk_write_wrapper()
+    return (dk_write_wrapper,)
 
-        dk_5yr.to_excel(
-            writer,
-            sheet_name="5yr_ahead", 
-            index=True
-        )
-    return dk_1yr, dk_2yr, dk_5yr, writer
+
+@app.cell
+def _(category_maps, median_results, pd):
+    # Create Excel writer object
+    def meds_write_wrapper():
+        with pd.ExcelWriter("inflation_expectations_by_category.xlsx") as writer:
+            horizons = {
+                0: "1yr_ahead",
+                1: "2yr_ahead",
+                2: "5yr_ahead"
+            }
+
+            for category, results in median_results.items():
+                # results is a tuple of three DataFrames (1yr, 2yr, 5yr)
+                for i, df in enumerate(results):
+                    # Convert to pandas
+                    pdf = df.to_pandas()
+
+                    # Get the appropriate mapping if it exists
+                    mapping = category_maps.get(category, {})
+                    if mapping:
+                        pdf = pdf.rename(columns={
+                            col: mapping.get(str(col), str(col)) 
+                            for col in pdf.columns 
+                            if col != 'yyyyqq'
+                        })
+
+                    # Write to Excel with sheet name combining category and horizon
+                    sheet_name = f"{category}_{horizons[i]}"
+                    pdf.to_excel(
+                        writer, 
+                        sheet_name=sheet_name, 
+                        index=False
+                    )
+
+    meds_write_wrapper()
+    return (meds_write_wrapper,)
 
 
 if __name__ == "__main__":
