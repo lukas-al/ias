@@ -1,3 +1,5 @@
+
+
 import marimo
 
 __generated_with = "0.11.26"
@@ -28,7 +30,8 @@ def _(pl):
         columns=[
             "weight", "yyyyqq", "age", 
             "work", "class", "tenure", "income", "sreg",
-            "q2a_agg1", "q2b_agg1", "q2c_agg1"
+            "q2a_agg1", "q2b_agg1", "q2c_agg1", "q2aiii",
+            "q17_1", "q17_2", "q17_3", "q17_4", "q17_5", "q17_6", "q17_7", "q17_8"
         ]
     )
     return (ias_raw,)
@@ -452,7 +455,19 @@ def _(median_results, plot_question_medians, sreg_bands):
 @app.cell
 def _():
     import marimo as mo
-    mo.md(r"""# Don't Knows by Age""")
+
+    mo.md(
+        r"""
+        # Don't Knows by Different variables
+
+        Steps taken to adjust for weights:
+
+        - For each timestamp, for a particular group (e.g. an age group)
+        - We calculate the total sum of weights
+        - Then we calculate the total sum of the weights for don't knows, for that particular group
+        - Then we divide the sum of weights for the don't knows in the category by the total don't knows
+        """
+    )
     return (mo,)
 
 
@@ -611,6 +626,233 @@ def _(
 
 @app.cell
 def _(mo):
+    mo.md(
+        r"""
+        # Alternate weight adjustment (CORRECT VERSION)
+        To correctly adjust for weights, we must:
+        - For each don't know, their vote isn't = 1. It needs to be adjusted by their weighting within the timestamp.
+        - This means dividing their value by the total weight
+        This is a simple weighting schema, no need to overcomplicate.
+        """
+    )
+    return
+
+
+@app.cell
+def _(
+    category_maps,
+    category_titles,
+    convert_yyyyqq_to_datetime,
+    horizons,
+    ias_clean,
+    pl,
+    plot_dk_proportions,
+):
+    def calc_weight_adjusted_dk_by_cat(df, category_col="age"):
+
+        def calc_single_horizon(question_col):
+            # Calculate weights for all "Don't Know" responses for a question, grouped by timestamp and category (e.g. age)
+            dk_weights = (
+                df
+                .filter(pl.col(question_col) == "19")
+                .group_by(["yyyyqq", category_col])
+                .agg(pl.col("weight").sum().alias("dk_weight"))
+            )
+
+            # Calculate the number of respondents overall for that timestamp
+            total_weights = (
+                df
+                .group_by("yyyyqq")
+                .agg(pl.col("weight").sum().alias("total_weights"))        
+            )
+
+            # Divide the total weight in the category & stamp by the number of respondents
+            adj_respondent_num = (
+                dk_weights
+                .join(total_weights, on=["yyyyqq"], how="right")
+                .with_columns([
+                    (pl.col("dk_weight") / pl.col("total_weights")).alias("adj_respondent_num")
+                ])
+                .fill_null(0)
+                .sort(["yyyyqq", category_col])
+            )
+
+            # Add datetime column and pivot
+            adj_respondent_num = adj_respondent_num.with_columns([
+                pl.col("yyyyqq").map_elements(lambda x: convert_yyyyqq_to_datetime(str(x))).alias("date")
+            ])
+
+            adj_respondent_num_pivoted = adj_respondent_num.pivot(
+                values="adj_respondent_num",
+                index="date",
+                on=category_col,
+                aggregate_function="first"
+            ).sort("date")
+
+            # Define the indexation date for 2020q1 using the same conversion function
+            baseline_date = convert_yyyyqq_to_datetime("202001")
+
+            # Convert to pandas DataFrame for further manipulation
+            res_df = adj_respondent_num_pivoted.to_pandas()
+
+            # For each column (other than 'date'), index the series to its value at baseline_date.
+            for col in res_df.columns:
+                if col == 'date':
+                    continue
+                # Find the baseline value at 2020q1
+                baseline_val = res_df.loc[res_df['date'] == baseline_date, col].iloc[0]
+
+                # Index each value by dividing by the baseline value
+                res_df[col] = res_df[col] / baseline_val
+
+            return adj_respondent_num_pivoted, res_df
+
+        # Calculate for all three horizons
+        results = {
+            '1yr': calc_single_horizon("q2a_agg1"),
+            '2yr': calc_single_horizon("q2b_agg1"),
+            '5yr': calc_single_horizon("q2c_agg1")
+        }
+
+        return results
+
+    # Calculate weight adjusted DK numbers for each category
+    weight_adjusted_dk_numbers = {
+        'age': calc_weight_adjusted_dk_by_cat(ias_clean, "age"),
+        'work': calc_weight_adjusted_dk_by_cat(ias_clean, "work"),
+        'class': calc_weight_adjusted_dk_by_cat(ias_clean, "class"),
+        'income': calc_weight_adjusted_dk_by_cat(ias_clean, "income"),
+        'sreg': calc_weight_adjusted_dk_by_cat(ias_clean, "sreg")
+    }
+
+    def _():
+        weight_adj_dk_figs = {}
+        for cat, res in weight_adjusted_dk_numbers.items():
+            weight_adj_dk_figs[cat] = {}
+            for hrz, (_, res_df) in res.items():
+                title = f"Weight adjusted proportion of 'Don't Know' responses indexed to 2020 q1: {horizons[hrz]} {category_titles[cat]}"
+                fig = plot_dk_proportions(
+                    res_df,
+                    label_mapping=category_maps.get(cat),
+                    title=title
+                )
+                weight_adj_dk_figs[cat][hrz] = fig
+        return
+
+
+    _()
+    return calc_weight_adjusted_dk_by_cat, weight_adjusted_dk_numbers
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        # Consumption and spending reasoning by rising/falling IE
+        - For 1 year ahead expectations
+        - Take those who's expectations have either gone up ('risen a lot', 'risen a little') or gone down ('fallen a lot', 'fallen a little') in response to question 2aiii
+        - For each of these two categories, create a time series for the proportion of responses to question 17 (the planning question).
+
+        """
+    )
+    return
+
+
+@app.cell
+def _(convert_yyyyqq_to_datetime, go, ias_clean, pd, pl):
+    q2a_map_2 = {
+        '1': 'Risen a lot',
+        '2': 'Risen a little',
+        '3': 'Unchanged',
+        '4': 'Fallen a little',
+        '5': 'Fallen a lot',
+        '6': 'No idea'
+    }
+
+    def q17_responses_by_up_or_down2(df):
+        # Adjust our date column
+        df = df.with_columns([
+            pl.col("yyyyqq")
+              .map_elements(lambda x: convert_yyyyqq_to_datetime(str(x)))
+              .alias("date")
+        ])
+
+        # Columns we want to cast from string to int
+        q17_cols = [f"q17_{i}" for i in range(1, 9)]
+
+        # Cast q17 columns to integers (from string "0"/"1")
+        df = df.with_columns([
+            pl.col(col).cast(pl.Int64).alias(col) for col in q17_cols
+        ])
+
+        # Split expectations
+        expectations_up = df.filter(pl.col('q2aiii').is_in(["1", "2"]))
+        expectations_down = df.filter(pl.col('q2aiii').is_in(["4", "5"]))
+
+        # Sum q17 responses for upward expectations
+        q17_up = expectations_up.group_by("date").agg([
+            pl.sum(col).alias(f"{col}_up") for col in q17_cols
+        ]).sort("date")
+
+        # Sum q17 responses for downward expectations
+        q17_down = expectations_down.group_by("date").agg([
+            pl.sum(col).alias(f"{col}_down") for col in q17_cols
+        ]).sort("date")
+
+        # Plot upward expectations
+        fig_up = go.Figure()
+        for col in q17_up.columns:
+            if col != "date":
+                fig_up.add_trace(go.Scatter(
+                    x=q17_up["date"].to_list(),
+                    y=q17_up[col].to_list(),
+                    mode="lines",
+                    name=col
+                ))
+        fig_up.update_layout(
+            title="q17 Responses Over Time - Expectations Up",
+            xaxis_title="Date",
+            yaxis_title="Sum of Responses"
+        )
+        fig_up.show()
+
+        # Plot downward expectations
+        fig_down = go.Figure()
+        for col in q17_down.columns:
+            if col != "date":
+                fig_down.add_trace(go.Scatter(
+                    x=q17_down["date"].to_list(),
+                    y=q17_down[col].to_list(),
+                    mode="lines",
+                    name=col
+                ))
+        fig_down.update_layout(
+            title="q17 Responses Over Time - Expectations Down",
+            xaxis_title="Date",
+            yaxis_title="Sum of Responses"
+        )
+        fig_down.show()
+
+        print(expectations_up.tail())
+
+        # Write to excel
+        # Convert Polars DataFrames to Pandas DataFrames
+        q17_up_pd = q17_up.to_pandas()
+        q17_down_pd = q17_down.to_pandas()
+
+        # Write the DataFrames to Excel, each on its own sheet
+        with pd.ExcelWriter("q17_responses.xlsx") as writer:
+            q17_up_pd.to_excel(writer, sheet_name="Q17_Up", index=False)
+            q17_down_pd.to_excel(writer, sheet_name="Q17_Down", index=False)
+
+
+    # Call the function with your dataset
+    q17_responses_by_up_or_down2(ias_clean)
+    return q17_responses_by_up_or_down2, q2a_map_2
+
+
+@app.cell
+def _(mo):
     mo.md(r"""# Write to Excel""")
     return
 
@@ -671,6 +913,126 @@ def _(category_maps, median_results, pd):
 
     meds_write_wrapper()
     return (meds_write_wrapper,)
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        ## Write the DK by category weight-adjusted counts
+
+
+        """
+    )
+    return
+
+
+@app.cell
+def _(pd, weight_adjusted_dk_numbers):
+    def write_results_to_excel2(results, filename="analysis_results.xlsx"):
+        """
+        Writes analysis results to an Excel workbook with each category on its own sheet.
+        For each category, the three horizons ('1yr', '2yr', '5yr') are merged horizontally
+        based on the 'date' column. The columns (except the date) are renamed using the provided
+        mapping dictionaries, and a multi-index is created on the columns so that the top level
+        is the horizon and the second level is the informative column name.
+
+        Parameters:
+          results (dict): Dictionary of analysis results (e.g. weight_adjusted_dk_numbers).
+                          Expected structure:
+                            { category: { horizon: (pivot_df, indexed_df), ... }, ... }
+          filename (str): Name of the Excel file to write.
+        """
+        # Mapping dictionaries by category:
+        mapping_dict = {
+            'age': {
+                "1": "15-24",
+                "2": "25-34",
+                "3": "35-44",
+                "4": "45-54",
+                "5": "55-64",
+                "6": "65+"
+            },
+            'work': {
+                "1": "Full or Part Time",
+                "2": "Unemployed"
+            },
+            'class': {
+                "1": "AB",
+                "2": "C1",
+                "3": "C2",
+                "4": "DE"    
+            },
+            'income': {
+                "1": "<9500 [option removed 2022 Feb]",
+                "2": "9500-17499 [option removed 2022 Feb]",
+                "3": "17500-24999 [option removed 2022 Feb]",
+                "4": ">25000 [option removed from 2016 Feb]",
+                "5": "25000-39999 [option added 2016 Feb, option removed 2022 Feb]",
+                "6": ">40000 [option added 2016 Feb, option removed 2022 Feb]",
+                "7": "<9999 [option added 2022 Feb]",
+                "8": "10000-19999 [option added 2022 Feb]",
+                "9": "20000-34999 [option added 2022 Feb]",
+                "10": "35000-44999 [option added 2022 Feb]",
+                "11": ">45000 [option added 2022 Feb]",
+                "12": "Prefer not to answer [option added 2022 Feb]"
+            },
+            'sreg': {
+                "1": "Scotland",
+                "2": "North & NI",
+                "3": "Midlands",
+                "4": "Wales and West",
+                "5": "South East"
+            }
+        }
+
+        with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+            # Loop over each category (each will be a separate sheet)
+            for cat, horizon_dict in results.items():
+                mapping = mapping_dict.get(cat, {})  # Get the mapping for the category, if available
+                merged_df = None
+
+                # Process each horizon's results
+                for hrz, (pivot_df, indexed_df) in horizon_dict.items():
+                    df_temp = indexed_df.copy()
+                    # Set 'date' as the index so that merging is on date
+                    df_temp = df_temp.set_index("date")
+                    # Rename columns using the provided mapping. If a key isn't found, keep original.
+                    df_temp.rename(columns=lambda col: mapping.get(col, col), inplace=True)
+                    # Create a MultiIndex for columns: top level is the horizon label, second level is the (mapped) column name.
+                    df_temp.columns = pd.MultiIndex.from_product([[hrz], df_temp.columns])
+
+                    if merged_df is None:
+                        merged_df = df_temp
+                    else:
+                        merged_df = merged_df.join(df_temp, how='outer')
+
+                # Sort the merged DataFrame by date index
+                merged_df.sort_index(inplace=True)
+                # Reset the index so that 'date' becomes a column again.
+                merged_df = merged_df.reset_index()
+                # For the 'date' column, create a two-level header where the top level is blank.
+                cols = merged_df.columns.tolist()
+                # The first column is 'date'
+                cols[0] = ('', 'date')
+                # The remaining columns are already MultiIndex; if any are not, convert them.
+                new_cols = []
+                for col in cols:
+                    if isinstance(col, tuple):
+                        new_cols.append(col)
+                    else:
+                        new_cols.append(('', col))
+                merged_df.columns = pd.MultiIndex.from_tuples(new_cols)
+
+                merged_df.index.name = "date"  # So it's labelled in Excel
+                merged_df.to_excel(writer, sheet_name=cat, index=True)
+                # Write the multi-indexed DataFrame to its own sheet
+                # merged_df.to_excel(writer, sheet_name=cat, index=False)
+
+        print(f"Results written to {filename}")
+
+    write_results_to_excel2(weight_adjusted_dk_numbers, filename="weight_adjusted_dk_by_category.xlsx")
+    return (write_results_to_excel2,)
 
 
 if __name__ == "__main__":
