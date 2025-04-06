@@ -8,6 +8,7 @@
 #     "plotly==6.0.1",
 #     "polars==1.26.0",
 #     "pyarrow==19.0.1",
+#     "xlsxwriter==3.2.2",
 # ]
 # ///
 
@@ -36,7 +37,8 @@ def _():
     import pandas as pd
     import marimo as mo
     import plotly.express as px
-    return csv, mo, pd, pl, px
+    import plotly.graph_objects as go
+    return csv, go, mo, pd, pl, px
 
 
 @app.cell
@@ -177,6 +179,90 @@ def _(result_pd):
     output_excel = "inflation_attitudes_quantiles_discrete.xlsx"
     result_pd.to_excel(output_excel, index=False)
     return (output_excel,)
+
+
+@app.cell
+def _(go, result_pd):
+    # Convert the ordinal values to z-scores for analysis
+    quantiles = ["5th", "10th", "25th", "50th", "75th", "90th", "95th"]
+    quantile_data = result_pd[quantiles]
+    quantile_zscores = (quantile_data - quantile_data.mean()) / quantile_data.std()
+
+    # Add date back in for plotting
+    quantile_zscores["date"] = result_pd["date"]
+
+    # Melt the z-score dataframe for plotting
+    melted_z = quantile_zscores.melt(id_vars="date", var_name="Quantile", value_name="Z-score")
+
+    # Create the z-score line plot
+    fig_zscore = go.Figure()
+
+    for quantile in melted_z["Quantile"].unique():
+        subset = melted_z[melted_z["Quantile"] == quantile]
+        fig_zscore.add_trace(go.Scatter(x=subset["date"], y=subset["Z-score"], mode="lines", name=quantile))
+
+    fig_zscore.update_layout(
+        title="Standardized Inflation Expectations by Quantile",
+        xaxis_title="Date",
+        yaxis_title="Z-score",
+        legend_title="Quantile",
+        template="plotly_white"
+    )
+
+    fig_zscore.show()
+    return (
+        fig_zscore,
+        melted_z,
+        quantile,
+        quantile_data,
+        quantile_zscores,
+        quantiles,
+        subset,
+    )
+
+
+@app.cell
+def _(go, result_pd):
+    # Calculate Interquantile Range (IQR)
+    result_pd["IQR_75_25"] = result_pd["75th"] - result_pd["25th"]
+    result_pd["IQR_90_10"] = result_pd["90th"] - result_pd["10th"]
+
+    # Create Interquantile Range chart
+    fig_iqr = go.Figure()
+    fig_iqr.add_trace(go.Scatter(x=result_pd["date"], y=result_pd["IQR_75_25"], mode="lines", name="75th - 25th"))
+    fig_iqr.add_trace(go.Scatter(x=result_pd["date"], y=result_pd["IQR_90_10"], mode="lines", name="90th - 10th"))
+
+    fig_iqr.update_layout(
+        title="Interquantile Range of Inflation Expectations",
+        xaxis_title="Date",
+        yaxis_title="Ordinal Range (Categories)",
+        legend_title="Range",
+        template="plotly_white"
+    )
+
+    fig_iqr.show()
+
+    return (fig_iqr,)
+
+
+@app.cell
+def _(quantile_zscores, result_pd):
+    from pandas import ExcelWriter
+
+    # Prepare z-scores with date for export
+    zscore_export = quantile_zscores.copy()
+
+    # Combine all into one Excel file
+    output_path = "inflation_expectations_quantiles_analysis.xlsx"
+
+    with ExcelWriter(output_path, engine="xlsxwriter") as writer:
+        result_pd.to_excel(writer, index=False, sheet_name="Original Quantiles")
+        zscore_export.to_excel(writer, index=False, sheet_name="Z-Scores")
+        result_pd[["date", "IQR_75_25", "IQR_90_10"]].to_excel(writer, index=False, sheet_name="Interquantile Ranges")
+
+    output_path
+
+    return ExcelWriter, output_path, writer, zscore_export
 
 
 if __name__ == "__main__":
