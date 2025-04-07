@@ -14,7 +14,7 @@
 
 import marimo
 
-__generated_with = "0.12.4"
+__generated_with = "0.11.26"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
@@ -68,7 +68,7 @@ def _(clean_ias, convert_yyyyqq_to_datetime, pl):
     # Step 1. Load Excel and clean
     # ---------------------------
     df = pl.read_excel(
-        "data/individual-responses-xlsx.xlsx",
+        "../ias_analysis/data/individual-responses-xlsx.xlsx",
         sheet_name="Dataset",
         columns=["yyyyqq", "age", "weight", "q2a_agg1"]
     )
@@ -241,7 +241,6 @@ def _(go, result_pd):
     )
 
     fig_iqr.show()
-
     return (fig_iqr,)
 
 
@@ -261,7 +260,6 @@ def _(quantile_zscores, result_pd):
         result_pd[["date", "IQR_75_25", "IQR_90_10"]].to_excel(writer, index=False, sheet_name="Interquantile Ranges")
 
     output_path
-
     return ExcelWriter, output_path, writer, zscore_export
 
 
