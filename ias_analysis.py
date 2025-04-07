@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.11.26"
+__generated_with = "0.12.4"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
@@ -699,11 +699,13 @@ def _(
             for col in res_df.columns:
                 if col == 'date':
                     continue
-                # Find the baseline value at 2020q1
-                baseline_val = res_df.loc[res_df['date'] == baseline_date, col].iloc[0]
 
-                # Index each value by dividing by the baseline value
-                res_df[col] = res_df[col] / baseline_val
+                ##### ------------->>>>> EDIT HERE TO CHANGE THE INDEXATION <<<<<------------
+                # # Find the baseline value at 2020q1
+                # baseline_val = res_df.loc[res_df['date'] == baseline_date, col].iloc[0]
+
+                # # Index each value by dividing by the baseline value
+                # res_df[col] = res_df[col] / baseline_val
 
             return adj_respondent_num_pivoted, res_df
 
@@ -730,7 +732,7 @@ def _(
         for cat, res in weight_adjusted_dk_numbers.items():
             weight_adj_dk_figs[cat] = {}
             for hrz, (_, res_df) in res.items():
-                title = f"Weight adjusted proportion of 'Don't Know' responses indexed to 2020 q1: {horizons[hrz]} {category_titles[cat]}"
+                title = f"Weight adjusted proportion of 'Don't Know' responses: {horizons[hrz]} {category_titles[cat]}"
                 fig = plot_dk_proportions(
                     res_df,
                     label_mapping=category_maps.get(cat),
@@ -752,7 +754,6 @@ def _(mo):
         - For 1 year ahead expectations
         - Take those who's expectations have either gone up ('risen a lot', 'risen a little') or gone down ('fallen a lot', 'fallen a little') in response to question 2aiii
         - For each of these two categories, create a time series for the proportion of responses to question 17 (the planning question).
-
         """
     )
     return
@@ -917,13 +918,7 @@ def _(category_maps, median_results, pd):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## Write the DK by category weight-adjusted counts
-
-
-        """
-    )
+    mo.md(r"""## Write the DK by category weight-adjusted counts""")
     return
 
 
