@@ -43,18 +43,22 @@ def _():
 
 @app.cell
 def _(go, math, pd, pl, px):
-    def quantile_maker(question='q2a_agg1'):
+    def quantile_maker(question="q2a_agg1"):
         """Wrapper function"""
 
-        def clean_ias(df: pl.DataFrame): 
+        def clean_ias(df: pl.DataFrame):
             df = df.filter(pl.col(question).is_not_null())
-            df = df.filter(pl.col(question) != "19") # Filter out don't knows.
-            df = df.with_columns([
-                pl.when(pl.col("age") == 8).then(1)
-                .when(pl.col("age") == 7).then(6)
-                .otherwise(pl.col("age"))
-                .alias("age")
-            ])
+            df = df.filter(pl.col(question) != "19")  # Filter out don't knows.
+            df = df.with_columns(
+                [
+                    pl.when(pl.col("age") == 8)
+                    .then(1)
+                    .when(pl.col("age") == 7)
+                    .then(6)
+                    .otherwise(pl.col("age"))
+                    .alias("age")
+                ]
+            )
             return df
 
         def convert_yyyyqq_to_datetime(yyyyqq: str) -> pd.Timestamp:
@@ -81,107 +85,197 @@ def _(go, math, pd, pl, px):
             # "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
             "ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
             sheet_name="Dataset",
-            columns=["yyyyqq", "age", "weight", question]
+            columns=["yyyyqq", "age", "weight", question],
         )
         df = clean_ias(df)
 
-        df = df.with_columns([
-            pl.col('yyyyqq')
-            .map_elements(convert_yyyyqq_to_datetime)
-            .alias('date')
-        ])
+        df = df.with_columns(
+            [
+                pl.col("yyyyqq")
+                .map_elements(convert_yyyyqq_to_datetime)
+                .alias("date")
+            ]
+        )
         df = df.with_columns(pl.col(question).cast(pl.Float64))
 
-        df.head()
+        # Before we do the quantiles, we need to remap the numbers to be meaningful!
+        response_map_f64 = {
+            1.0: -0.5,
+            2.0: -1.5,
+            3.0: -2.5,
+            4.0: -3.5,
+            5.0: -4.5,
+            6.0: -5.5,
+            7.0: 0.0,
+            8.0: 0.5,
+            9.0: 1.5,
+            10.0: 2.5,
+            11.0: 3.5,
+            12.0: 4.5,
+            13.0: 5.5,
+            14.0: 6.5,
+            15.0: 7.5,
+            16.0: 8.5,
+            17.0: 9.5,
+            18.0: 10.5,
+            19.0: None,
+            20.0: 10.5,
+            21.0: 11.5,
+            22.0: 12.5,
+            23.0: 13.5,
+            24.0: 14.5,
+            25.0: 15.5,
+        }
+        df = df.with_columns(
+            pl.col(question).replace(response_map_f64).alias(question)
+        ).filter(
+            pl.col(question).is_not_null()
+        )
+
+        # Remap the values to make them useful for plotting
+        # Create Y-axis mapping for plotting purposes (order responses meaningfully)
+        sorted_codes = sorted(
+            ((code, val) for code, val in response_map_f64.items() if val is not None),
+            key=lambda item: item[1]
+        )
+        response_plot_yaxis = {code: rank for rank, (code, _) in enumerate(sorted_codes)}
+        for code, val in response_map_f64.items():
+            if val is None:
+                response_plot_yaxis[code] = len(response_plot_yaxis)
 
         # Compute discrete quantiles for each date group using the custom function.
-        result = df.group_by("date").agg([
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.05)).alias("5th"),
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.10)).alias("10th"),
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.25)).alias("25th"),
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.50)).alias("50th"),
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.75)).alias("75th"),
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.90)).alias("90th"),
-            pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.95)).alias("95th"),
-        ])
+        result = df.group_by("date").agg(
+            [
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.05))
+                .alias("5th"),
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.10))
+                .alias("10th"),
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.25))
+                .alias("25th"),
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.50))
+                .alias("50th"),
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.75))
+                .alias("75th"),
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.90))
+                .alias("90th"),
+                pl.col(question)
+                .map_elements(lambda x: compute_discrete_quantile(x, 0.95))
+                .alias("95th"),
+            ]
+        )
 
-        result = result.sort(by='date')
+        result = result.sort(by="date")
         result_pd = result.to_pandas()
 
-        readable_mapping = {
-         1: "Down by 1% or less",
-         2: "Down by 1% but less than 2%",
-         3: "Down by 2% but less than 3%",
-         4: "Down by 3% but less than 4%",
-         5: "Down by 4% but less than 5%",
-         6: "Down by 5% or more",
-         7: "not changed",
-         8: "up by 1% or less",
-         9: "up by 1% but less than 2%",
-         10: "up by 2% but less than 3%",
-         11: "up by 3% but less than 4%",
-         12: "up by 4% but less than 5%",
-         13: "up by 5% but less than 6%",
-         14: "up by 6% but less than 7%",
-         15: "up by 7% but less than 8%",
-         16: "up by 8% but less than 9%",
-         17: "up by 9% but less than 10%",
-         18: "up by 10% or more",
-         # 19: "no idea",
-         20: "up by 10% by less than 11%",
-         21: "up by 11% by less than 12%",
-         22: "up by 12% by less than 13%",
-         23: "up by 13% by less than 14%",
-         24: "up by 14% by less than 15%",
-         25: "up by 15% or more"
-    }
+        # 1. Define human-readable response labels
+        response_labels = {
+            1.0: "Down by 1% or less",
+            2.0: "Down by 1% to <2%",
+            3.0: "Down by 2% to <3%",
+            4.0: "Down by 3% to <4%",
+            5.0: "Down by 4% to <5%",
+            6.0: "Down by 5% or more",
+            7.0: None,
+            8.0: "Up by 1% or less",
+            9.0: "Up by 1% to <2%",
+            10.0: "Up by 2% to <3%",
+            11.0: "Up by 3% to <4%",
+            12.0: "Up by 4% to <5%",
+            13.0: "Up by 5% to <6%",
+            14.0: "Up by 6% to <7%",
+            15.0: "Up by 7% to <8%",
+            16.0: "Up by 8% to <9%",
+            17.0: "Up by 9% to <10%",
+            18.0: "Up by 10% or more",
+            19.0: "No idea",
+            20.0: "Up by 10% to <11%",
+            21.0: "Up by 11% to <12%",
+            22.0: "Up by 12% to <13%",
+            23.0: "Up by 13% to <14%",
+            24.0: "Up by 14% to <15%",
+            25.0: "Up by 15% or more"
+        }
 
-        tickval_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25]
-        # Create the line chart using the numeric quantile values.
-        fig = px.line(result_pd, x="date", y=['5th', '10th', '25th', '50th', '75th', '90th', '95th'],
-                      title='Inflation Expectations by Quantiles (Discrete Treatment)',
-                      markers=True)
-
-        # Update the y-axis ticks to display human-readable descriptions.
-        fig.update_yaxes(
-             tickmode="array",
-             tickvals=tickval_list,
-             ticktext=[readable_mapping.get(i, str(i)) for i in tickval_list]
+        # 2. Create a sorted list of tickvals and labels based on interpolated values
+        sorted_items = sorted(
+            ((code, val) for code, val in response_map_f64.items() if val is not None),
+            key=lambda x: x[1]
         )
+
+        tickvals = [val for _, val in sorted_items]
+        ticktext = [response_labels[code] for code, _ in sorted_items]
+
+        # Create the line chart using the numeric quantile values.
+        fig = px.line(
+            result_pd,
+            x="date",
+            y=["5th", "10th", "25th", "50th", "75th", "90th", "95th"],
+            title="Inflation Expectations Quantiles",
+            markers=True,
+        )
+
+        # Update with reasonable labels
+        fig.update_layout(
+            yaxis=dict(
+                tickmode="array",
+                tickvals=tickvals,
+                ticktext=ticktext,
+                tickfont=dict(size=10),
+                tickangle=30,  # Try 0 (default), 30, or 45 degrees
+                title="Inflation expectation",
+            )
+        )
+
         fig.show()
+
 
         # Convert the ordinal values to z-scores for analysis
         quantiles = ["5th", "10th", "25th", "50th", "75th", "90th", "95th"]
         quantile_data = result_pd[quantiles]
-        quantile_zscores = (quantile_data - quantile_data.mean()) / quantile_data.std()
+        quantile_zscores = (
+            quantile_data - quantile_data.mean()
+        ) / quantile_data.std()
 
         # Add date back in for plotting
         quantile_zscores["date"] = result_pd["date"]
 
         # Melt the z-score dataframe for plotting
-        melted_z = quantile_zscores.melt(id_vars="date", var_name="Quantile", value_name="Z-score")
+        melted_z = quantile_zscores.melt(
+            id_vars="date", var_name="Quantile", value_name="Z-score"
+        )
 
         # Create the z-score line plot
         fig_zscore = go.Figure()
 
         for quantile in melted_z["Quantile"].unique():
             subset = melted_z[melted_z["Quantile"] == quantile]
-            fig_zscore.add_trace(go.Scatter(x=subset["date"], y=subset["Z-score"], mode="lines", name=quantile))
+            fig_zscore.add_trace(
+                go.Scatter(
+                    x=subset["date"],
+                    y=subset["Z-score"],
+                    mode="lines",
+                    name=quantile,
+                )
+            )
 
         fig_zscore.update_layout(
             title="Standardized Inflation Expectations by Quantile",
             xaxis_title="Date",
             yaxis_title="Z-score",
             legend_title="Quantile",
-            template="plotly_white"
+            template="plotly_white",
         )
 
         fig_zscore.show()
 
-
-
         ### WRITE TO EXCEL
-        output_excel = f"inflation_attitudes_quantiles_discrete_{question}.xlsx"
+        output_excel = f"ias_dist_analysis/inflation_attitudes_quantiles_discrete_{question}.xlsx"
         result_pd.to_excel(output_excel, index=False)
     return (quantile_maker,)
 
