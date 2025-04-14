@@ -14,7 +14,7 @@
 
 import marimo
 
-__generated_with = "0.12.4"
+__generated_with = "0.12.6"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
@@ -45,7 +45,7 @@ def _():
 def _(go, math, pd, pl, px):
     def quantile_maker(question='q2a_agg1'):
         """Wrapper function"""
-    
+
         def clean_ias(df: pl.DataFrame): 
             df = df.filter(pl.col(question).is_not_null())
             df = df.filter(pl.col(question) != "19") # Filter out don't knows.
@@ -78,19 +78,20 @@ def _(go, math, pd, pl, px):
         ### LOAD THE DATA
         df = pl.read_excel(
             # "../ias_analysis/data/individual-responses-xlsx.xlsx",
-            "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
+            # "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
+            "ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
             sheet_name="Dataset",
             columns=["yyyyqq", "age", "weight", question]
         )
         df = clean_ias(df)
-    
+
         df = df.with_columns([
             pl.col('yyyyqq')
             .map_elements(convert_yyyyqq_to_datetime)
             .alias('date')
         ])
         df = df.with_columns(pl.col(question).cast(pl.Float64))
-    
+
         df.head()
 
         # Compute discrete quantiles for each date group using the custom function.
@@ -103,7 +104,7 @@ def _(go, math, pd, pl, px):
             pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.90)).alias("90th"),
             pl.col(question).map_elements(lambda x: compute_discrete_quantile(x, 0.95)).alias("95th"),
         ])
-    
+
         result = result.sort(by='date')
         result_pd = result.to_pandas()
 
@@ -140,7 +141,7 @@ def _(go, math, pd, pl, px):
         fig = px.line(result_pd, x="date", y=['5th', '10th', '25th', '50th', '75th', '90th', '95th'],
                       title='Inflation Expectations by Quantiles (Discrete Treatment)',
                       markers=True)
-    
+
         # Update the y-axis ticks to display human-readable descriptions.
         fig.update_yaxes(
              tickmode="array",
@@ -153,20 +154,20 @@ def _(go, math, pd, pl, px):
         quantiles = ["5th", "10th", "25th", "50th", "75th", "90th", "95th"]
         quantile_data = result_pd[quantiles]
         quantile_zscores = (quantile_data - quantile_data.mean()) / quantile_data.std()
-    
+
         # Add date back in for plotting
         quantile_zscores["date"] = result_pd["date"]
-    
+
         # Melt the z-score dataframe for plotting
         melted_z = quantile_zscores.melt(id_vars="date", var_name="Quantile", value_name="Z-score")
-    
+
         # Create the z-score line plot
         fig_zscore = go.Figure()
-    
+
         for quantile in melted_z["Quantile"].unique():
             subset = melted_z[melted_z["Quantile"] == quantile]
             fig_zscore.add_trace(go.Scatter(x=subset["date"], y=subset["Z-score"], mode="lines", name=quantile))
-    
+
         fig_zscore.update_layout(
             title="Standardized Inflation Expectations by Quantile",
             xaxis_title="Date",
@@ -174,7 +175,7 @@ def _(go, math, pd, pl, px):
             legend_title="Quantile",
             template="plotly_white"
         )
-    
+
         fig_zscore.show()
 
 
@@ -182,7 +183,6 @@ def _(go, math, pd, pl, px):
         ### WRITE TO EXCEL
         output_excel = f"inflation_attitudes_quantiles_discrete_{question}.xlsx"
         result_pd.to_excel(output_excel, index=False)
-    
     return (quantile_maker,)
 
 
@@ -236,7 +236,8 @@ def _(clean_ias, convert_yyyyqq_to_datetime, pl):
     # ---------------------------
     df = pl.read_excel(
         # "../ias_analysis/data/individual-responses-xlsx.xlsx",
-        "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
+        # "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
+        "ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
         sheet_name="Dataset",
         columns=["yyyyqq", "age", "weight", "q2a_agg1"]
     )
@@ -294,12 +295,12 @@ def _(df, pl):
 @app.cell
 def _(px, result_pd):
     readable_mapping = {
-         1: "Down by 1% or less",
-         2: "Down by 1% but less than 2%",
-         3: "Down by 2% but less than 3%",
-         4: "Down by 3% but less than 4%",
-         5: "Down by 4% but less than 5%",
-         6: "Down by 5% or more",
+         1: "Down by 5% or more",
+         2: "Down by 4% but less than 5%",
+         3: "Down by 3% but less than 4%",
+         4: "Down by 2% but less than 3%",
+         5: "Down by 1% but less than 2%",
+         6: "Down by 1% or less",
          7: "not changed",
          8: "up by 1% or less",
          9: "up by 1% but less than 2%",
