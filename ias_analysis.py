@@ -6,7 +6,7 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _(mo):
-    mo.md(r"""# Inflation Expectations by categories""")
+    mo.md(r"""\# Inflation Expectations by categories""")
     return
 
 
@@ -425,7 +425,7 @@ def _(
         )
         for category, df in analyses.items()
     }
-    return ias_clean, median_results
+    return analyses, ias_clean, median_results
 
 
 @app.cell
@@ -1094,11 +1094,242 @@ def _(
 def _(mo):
     mo.md(
         r"""
-    # Consumption and spending reasoning by rising/falling IE
-    - For 1 year ahead expectations
-    - Take those who's expectations have either gone up ('risen a lot', 'risen a little') or gone down ('fallen a lot', 'fallen a little') in response to question 2aiii
-    - For each of these two categories, create a time series for the proportion of responses to question 17 (the planning question).
-    """
+        # Mean and Median Responses by Category
+
+        Calculate both mean and median responses for all questions (q2a_agg1, q2b_agg1, q2c_agg1, q1b) split by demographic categories.
+        This provides a comprehensive view of central tendencies across different groups.
+        """
+    )
+    return
+
+
+@app.cell
+def _():
+    # Class bounds for q1b responses (price perceptions)
+    q1b_class_bounds = {
+        "1": (-3.0, 1.0),    # Gone down
+        "2": (0.0, 0.0),     # Not changed
+        "3": (0.5, 0.5),     # Up by 1% or less 
+        "4": (1.5, 1.0),     # Up by 1% but less than 2%
+        "5": (2.5, 1.0),     # Up by 2% but less than 3%
+        "6": (3.5, 1.0),     # Up by 3% but less than 4%
+        "7": (4.5, 1.0),     # Up by 4% but less than 5%
+        "8": (5.5, 1.0),     # Up by 5% but less than 6%
+        "9": (6.5, 1.0),     # Up by 6% but less than 7%
+        "10": (7.5, 1.0),    # Up by 7% but less than 8%
+        "11": (8.5, 1.0),    # Up by 8% but less than 9%
+        "12": (9.5, 1.0),    # Up by 9% but less than 10%
+        "13": (10.5, 1.0),   # Up by 10% or more
+        "14": (0.0, 0.0),    # No idea (exclude from calculations)
+        "15": (10.5, 1.0),   # Up by 10% but less than 11%
+        "16": (11.5, 1.0),   # Up by 11% but less than 12%
+        "17": (12.5, 1.0),   # Up by 12% but less than 13%
+        "18": (13.5, 1.0),   # Up by 13% but less than 14%
+        "19": (14.5, 1.0),   # Up by 14% but less than 15%
+        "20": (15.0, 1.0),   # Up by 15% or more
+    }
+    return (q1b_class_bounds,)
+
+
+@app.cell
+def _(
+    Dict,
+    Optional,
+    Tuple,
+    convert_yyyyqq_to_datetime,
+    grouped_median_unequal_widths,
+    pl,
+):
+    def grouped_mean_unequal_widths(
+        counts: Dict[str, int], class_bounds: Dict[str, Tuple[float, float]]
+    ) -> Optional[float]:
+        """
+        Calculate grouped mean with variable class widths using midpoint method.
+
+        counts: dict of {category_label: count}
+        class_bounds: dict of {category_label: (lower_bound, width)}
+        Returns weighted mean as float, or None if no data.
+        """
+        if not counts:
+            return None
+
+        total_count = 0
+        weighted_sum = 0
+
+        for label, count in counts.items():
+            if label in class_bounds and count > 0:
+                L, w = class_bounds[label]
+                midpoint = L + w / 2  # Use midpoint of the interval
+                weighted_sum += midpoint * count
+                total_count += count
+
+        return weighted_sum / total_count if total_count > 0 else None
+
+
+    def comp_grouped_mean_median(
+        df: pl.DataFrame,
+        class_bounds: Dict[str, Tuple[float, float]],
+        disagg_col: str = "age",
+        questions: list = None
+    ):
+        """
+        Compute grouped means and medians for specified question columns by timestamp and demographic category.
+
+        Parameters:
+          df (pl.DataFrame): Input DataFrame.
+          class_bounds (dict): Mapping from category labels to (lower_bound, width) tuples.
+          disagg_col (str): Column name to disaggregate by (default is "age").
+          questions (list): List of question column names to analyze.
+
+        Returns:
+          Dict: Dictionary with question names as keys, each containing 'mean' and 'median' DataFrames.
+        """
+        if questions is None:
+            questions = ["q2a_agg1", "q2b_agg1", "q2c_agg1", "q1b"]
+
+        result_frames = {q: {"mean": {}, "median": {}} for q in questions}
+
+        # Group by timestamp and the specified disaggregation column
+        grouped = df.group_by(["yyyyqq", disagg_col])
+
+        for (yyyyqq, category), group in grouped:
+            for question in questions:
+                # Filter out "No idea" responses for calculations (if applicable)
+                if question == "q1b":
+                    analysis_group = group.filter(pl.col(question) != "14")  # Exclude "No idea"
+                elif question in ["q2a_agg1", "q2b_agg1", "q2c_agg1"]:
+                    analysis_group = group.filter(pl.col(question) != "19")  # Exclude "Don't know"
+                else:
+                    analysis_group = group
+
+                counts_df = analysis_group[question].value_counts()
+
+                if counts_df.height == 0:
+                    mean_val = None
+                    median_val = None
+                else:
+                    # Convert to dictionary: category value -> count
+                    counts = dict(zip(counts_df[question], counts_df["count"]))
+                    mean_val = grouped_mean_unequal_widths(counts, class_bounds)
+                    median_val = grouped_median_unequal_widths(counts, class_bounds)
+
+                result_frames[question]["mean"].setdefault(yyyyqq, {})[category] = mean_val
+                result_frames[question]["median"].setdefault(yyyyqq, {})[category] = median_val
+
+        # Convert results into DataFrames
+        output = {}
+        for question in questions:
+            output[question] = {}
+            for stat_type in ["mean", "median"]:
+                rows = []
+                for yyyyqq, cat_dict in result_frames[question][stat_type].items():
+                    row = {"yyyyqq": convert_yyyyqq_to_datetime(str(yyyyqq))}
+                    row.update({str(cat): val for cat, val in cat_dict.items()})
+                    rows.append(row)
+                output[question][stat_type] = pl.DataFrame(rows).sort("yyyyqq")
+
+        return output
+    return (comp_grouped_mean_median,)
+
+
+@app.cell
+def _(
+    analyses,
+    comp_grouped_mean_median,
+    ias_clean,
+    q1b_class_bounds,
+    q2_agg_ias_class_bounds,
+):
+    # Calculate mean and median for all questions by demographic category
+    mean_median_results = {}
+
+    # For q2a_agg1, q2b_agg1, q2c_agg1 questions - use existing class bounds
+    for category, df in analyses.items():
+        mean_median_results[category] = comp_grouped_mean_median(
+            df, 
+            q2_agg_ias_class_bounds, 
+            disagg_col=category,
+            questions=["q2a_agg1", "q2b_agg1", "q2c_agg1"]
+        )
+
+    # For q1b question - use new class bounds and clean data
+    q1b_mean_median_results = {}
+    for category in analyses.keys():
+        q1b_mean_median_results[category] = comp_grouped_mean_median(
+            ias_clean,
+            q1b_class_bounds,
+            disagg_col=category,
+            questions=["q1b"]
+        )
+
+    # Combine results
+    for category in mean_median_results.keys():
+        mean_median_results[category].update(q1b_mean_median_results[category])
+    return (mean_median_results,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Write Mean and Median Results to Excel""")
+    return
+
+
+@app.cell
+def _(category_maps, mean_median_results, pd):
+    def write_mean_median_to_excel():
+        """Write mean and median results to Excel with organized sheets"""
+
+        with pd.ExcelWriter("ias_responses_mean_median_by_cat.xlsx") as writer:
+            question_names = {
+                "q2a_agg1": "1yr_ahead_expectations",
+                "q2b_agg1": "2yr_ahead_expectations", 
+                "q2c_agg1": "5yr_ahead_expectations",
+                "q1b": "price_perceptions"
+            }
+
+            for category, results in mean_median_results.items():
+                # Get the appropriate mapping if it exists
+                mapping = category_maps.get(category, {})
+
+                for question, stats in results.items():
+                    question_name = question_names.get(question, question)
+
+                    for stat_type, df in stats.items():
+                        # Convert to pandas
+                        pdf = df.to_pandas()
+
+                        # Apply column mapping
+                        if mapping:
+                            pdf = pdf.rename(
+                                columns={
+                                    col: mapping.get(str(col), str(col))
+                                    for col in pdf.columns
+                                    if col != "yyyyqq"
+                                }
+                            )
+
+                        # Create sheet name
+                        sheet_name = f"{category}_{question_name}_{stat_type}"
+                        if len(sheet_name) > 31:  # Excel sheet name limit
+                            sheet_name = f"{category}_{question}_{stat_type}"
+
+                        pdf.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            print("Mean and median results written to ias_responses_mean_median_by_cat.xlsx")
+
+    write_mean_median_to_excel()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        # Consumption and spending reasoning by rising/falling IE
+        - For 1 year ahead expectations
+        - Take those who's expectations have either gone up ('risen a lot', 'risen a little') or gone down ('fallen a lot', 'fallen a little') in response to question 2aiii
+        - For each of these two categories, create a time series for the proportion of responses to question 17 (the planning question).
+        """
     )
     return
 
