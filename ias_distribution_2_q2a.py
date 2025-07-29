@@ -46,9 +46,111 @@ def _(go, math, pd, pl, px):
     def quantile_maker(question="q2a_agg1"):
         """Wrapper function"""
 
+        # Define question-specific parameters
+        question_config = {
+            "q2a_agg1": {
+                "no_idea_code": "19",
+                "response_map": {
+                    1.0: -0.5, 2.0: -1.5, 3.0: -2.5, 4.0: -3.5, 5.0: -4.5, 6.0: -5.5,
+                    7.0: 0.0, 8.0: 0.5, 9.0: 1.5, 10.0: 2.5, 11.0: 3.5, 12.0: 4.5,
+                    13.0: 5.5, 14.0: 6.5, 15.0: 7.5, 16.0: 8.5, 17.0: 9.5, 18.0: 10.5,
+                    19.0: None, 20.0: 10.5, 21.0: 11.5, 22.0: 12.5, 23.0: 13.5, 24.0: 14.5, 25.0: 15.5
+                },
+                "response_labels": {
+                    1.0: "Down by 1% or less", 2.0: "Down by 1% to <2%", 3.0: "Down by 2% to <3%",
+                    4.0: "Down by 3% to <4%", 5.0: "Down by 4% to <5%", 6.0: "Down by 5% or more",
+                    7.0: "No change", 8.0: "Up by 1% or less", 9.0: "Up by 1% to <2%", 10.0: "Up by 2% to <3%",
+                    11.0: "Up by 3% to <4%", 12.0: "Up by 4% to <5%", 13.0: "Up by 5% to <6%",
+                    14.0: "Up by 6% to <7%", 15.0: "Up by 7% to <8%", 16.0: "Up by 8% to <9%",
+                    17.0: "Up by 9% to <10%", 18.0: "Up by 10% or more", 19.0: "No idea",
+                    20.0: "Up by 10% to <11%", 21.0: "Up by 11% to <12%", 22.0: "Up by 12% to <13%",
+                    23.0: "Up by 13% to <14%", 24.0: "Up by 14% to <15%", 25.0: "Up by 15% or more"
+                }
+            },
+            "q2b_agg1": {
+                "no_idea_code": "19",
+                "response_map": {
+                    1.0: -0.5, 2.0: -1.5, 3.0: -2.5, 4.0: -3.5, 5.0: -4.5, 6.0: -5.5,
+                    7.0: 0.0, 8.0: 0.5, 9.0: 1.5, 10.0: 2.5, 11.0: 3.5, 12.0: 4.5,
+                    13.0: 5.5, 14.0: 6.5, 15.0: 7.5, 16.0: 8.5, 17.0: 9.5, 18.0: 10.5,
+                    19.0: None, 20.0: 10.5, 21.0: 11.5, 22.0: 12.5, 23.0: 13.5, 24.0: 14.5, 25.0: 15.5
+                },
+                "response_labels": {
+                    1.0: "Down by 1% or less", 2.0: "Down by 1% to <2%", 3.0: "Down by 2% to <3%",
+                    4.0: "Down by 3% to <4%", 5.0: "Down by 4% to <5%", 6.0: "Down by 5% or more",
+                    7.0: "No change", 8.0: "Up by 1% or less", 9.0: "Up by 1% to <2%", 10.0: "Up by 2% to <3%",
+                    11.0: "Up by 3% to <4%", 12.0: "Up by 4% to <5%", 13.0: "Up by 5% to <6%",
+                    14.0: "Up by 6% to <7%", 15.0: "Up by 7% to <8%", 16.0: "Up by 8% to <9%",
+                    17.0: "Up by 9% to <10%", 18.0: "Up by 10% or more", 19.0: "No idea",
+                    20.0: "Up by 10% to <11%", 21.0: "Up by 11% to <12%", 22.0: "Up by 12% to <13%",
+                    23.0: "Up by 13% to <14%", 24.0: "Up by 14% to <15%", 25.0: "Up by 15% or more"
+                }
+            },
+            "q2c_agg1": {
+                "no_idea_code": "19",
+                "response_map": {
+                    1.0: -0.5, 2.0: -1.5, 3.0: -2.5, 4.0: -3.5, 5.0: -4.5, 6.0: -5.5,
+                    7.0: 0.0, 8.0: 0.5, 9.0: 1.5, 10.0: 2.5, 11.0: 3.5, 12.0: 4.5,
+                    13.0: 5.5, 14.0: 6.5, 15.0: 7.5, 16.0: 8.5, 17.0: 9.5, 18.0: 10.5,
+                    19.0: None, 20.0: 10.5, 21.0: 11.5, 22.0: 12.5, 23.0: 13.5, 24.0: 14.5, 25.0: 15.5
+                },
+                "response_labels": {
+                    1.0: "Down by 1% or less", 2.0: "Down by 1% to <2%", 3.0: "Down by 2% to <3%",
+                    4.0: "Down by 3% to <4%", 5.0: "Down by 4% to <5%", 6.0: "Down by 5% or more",
+                    7.0: "No change", 8.0: "Up by 1% or less", 9.0: "Up by 1% to <2%", 10.0: "Up by 2% to <3%",
+                    11.0: "Up by 3% to <4%", 12.0: "Up by 4% to <5%", 13.0: "Up by 5% to <6%",
+                    14.0: "Up by 6% to <7%", 15.0: "Up by 7% to <8%", 16.0: "Up by 8% to <9%",
+                    17.0: "Up by 9% to <10%", 18.0: "Up by 10% or more", 19.0: "No idea",
+                    20.0: "Up by 10% to <11%", 21.0: "Up by 11% to <12%", 22.0: "Up by 12% to <13%",
+                    23.0: "Up by 13% to <14%", 24.0: "Up by 14% to <15%", 25.0: "Up by 15% or more"
+                }
+            },
+            "q1b": {
+                "no_idea_code": "14",
+                "response_map": {
+                    1.0: -2.0, 2.0: 0.0, 3.0: 0.5, 4.0: 1.5, 5.0: 2.5, 6.0: 3.5, 7.0: 4.5,
+                    8.0: 5.5, 9.0: 6.5, 10.0: 7.5, 11.0: 8.5, 12.0: 9.5, 13.0: 10.5,
+                    14.0: None, 15.0: 10.5, 16.0: 11.5, 17.0: 12.5, 18.0: 13.5, 19.0: 14.5, 20.0: 15.5
+                },
+                "response_labels": {
+                    1.0: "Gone down", 2.0: "No change", 3.0: "Up by 1% or less", 
+                    4.0: "Up by 1% to <2%", 5.0: "Up by 2% to <3%", 6.0: "Up by 3% to <4%",
+                    7.0: "Up by 4% to <5%", 8.0: "Up by 5% to <6%", 9.0: "Up by 6% to <7%",
+                    10.0: "Up by 7% to <8%", 11.0: "Up by 8% to <9%", 12.0: "Up by 9% to <10%",
+                    13.0: "Up by 10% or more", 14.0: "No idea", 15.0: "Up by 10% to <11%",
+                    16.0: "Up by 11% to <12%", 17.0: "Up by 12% to <13%", 18.0: "Up by 13% to <14%",
+                    19.0: "Up by 14% to <15%", 20.0: "Up by 15% or more"
+                }
+            },
+            "q1c": {
+                "no_idea_code": "19",
+                "response_map": {
+                    1.0: -0.5, 2.0: -1.5, 3.0: -2.5, 4.0: -3.5, 5.0: -4.5, 6.0: -5.5,
+                    7.0: 0.0, 8.0: 0.5, 9.0: 1.5, 10.0: 2.5, 11.0: 3.5, 12.0: 4.5,
+                    13.0: 5.5, 14.0: 6.5, 15.0: 7.5, 16.0: 8.5, 17.0: 9.5, 18.0: 10.5,
+                    19.0: None, 20.0: 10.5, 21.0: 11.5, 22.0: 12.5, 23.0: 13.5, 24.0: 14.5, 25.0: 15.5
+                },
+                "response_labels": {
+                    1.0: "Down by 1% or less", 2.0: "Down by 1% to <2%", 3.0: "Down by 2% to <3%",
+                    4.0: "Down by 3% to <4%", 5.0: "Down by 4% to <5%", 6.0: "Down by 5% or more",
+                    7.0: "No change", 8.0: "Up by 1% or less", 9.0: "Up by 1% to <2%", 10.0: "Up by 2% to <3%",
+                    11.0: "Up by 3% to <4%", 12.0: "Up by 4% to <5%", 13.0: "Up by 5% to <6%",
+                    14.0: "Up by 6% to <7%", 15.0: "Up by 7% to <8%", 16.0: "Up by 8% to <9%",
+                    17.0: "Up by 9% to <10%", 18.0: "Up by 10% or more", 19.0: "No idea",
+                    20.0: "Up by 10% to <11%", 21.0: "Up by 11% to <12%", 22.0: "Up by 12% to <13%",
+                    23.0: "Up by 13% to <14%", 24.0: "Up by 14% to <15%", 25.0: "Up by 15% or more"
+                }
+            }
+        }
+
+        config = question_config[question]
+        response_map_f64 = config["response_map"]
+        response_labels = config["response_labels"]
+        no_idea_code = config["no_idea_code"]
+
         def clean_ias(df: pl.DataFrame):
             df = df.filter(pl.col(question).is_not_null())
-            df = df.filter(pl.col(question) != "19")  # Filter out don't knows.
+            df = df.filter(pl.col(question) != no_idea_code)  # Filter out don't knows.
             df = df.with_columns(
                 [
                     pl.when(pl.col("age") == 8)
@@ -81,9 +183,7 @@ def _(go, math, pd, pl, px):
 
         ### LOAD THE DATA
         df = pl.read_excel(
-            # "../ias_analysis/data/individual-responses-xlsx.xlsx",
-            # "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
-            "ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
+            "./data/individual-responses.xlsx",
             sheet_name="Dataset",
             columns=["yyyyqq", "age", "weight", question],
         )
@@ -98,50 +198,11 @@ def _(go, math, pd, pl, px):
         )
         df = df.with_columns(pl.col(question).cast(pl.Float64))
 
-        # Before we do the quantiles, we need to remap the numbers to be meaningful!
-        response_map_f64 = {
-            1.0: -0.5,
-            2.0: -1.5,
-            3.0: -2.5,
-            4.0: -3.5,
-            5.0: -4.5,
-            6.0: -5.5,
-            7.0: 0.0,
-            8.0: 0.5,
-            9.0: 1.5,
-            10.0: 2.5,
-            11.0: 3.5,
-            12.0: 4.5,
-            13.0: 5.5,
-            14.0: 6.5,
-            15.0: 7.5,
-            16.0: 8.5,
-            17.0: 9.5,
-            18.0: 10.5,
-            19.0: None,
-            20.0: 10.5,
-            21.0: 11.5,
-            22.0: 12.5,
-            23.0: 13.5,
-            24.0: 14.5,
-            25.0: 15.5,
-        }
         df = df.with_columns(
             pl.col(question).replace(response_map_f64).alias(question)
         ).filter(
             pl.col(question).is_not_null()
         )
-
-        # Remap the values to make them useful for plotting
-        # Create Y-axis mapping for plotting purposes (order responses meaningfully)
-        sorted_codes = sorted(
-            ((code, val) for code, val in response_map_f64.items() if val is not None),
-            key=lambda item: item[1]
-        )
-        response_plot_yaxis = {code: rank for rank, (code, _) in enumerate(sorted_codes)}
-        for code, val in response_map_f64.items():
-            if val is None:
-                response_plot_yaxis[code] = len(response_plot_yaxis)
 
         # Compute discrete quantiles for each date group using the custom function.
         result = df.group_by("date").agg(
@@ -173,36 +234,7 @@ def _(go, math, pd, pl, px):
         result = result.sort(by="date")
         result_pd = result.to_pandas()
 
-        # 1. Define human-readable response labels
-        response_labels = {
-            1.0: "Down by 1% or less",
-            2.0: "Down by 1% to <2%",
-            3.0: "Down by 2% to <3%",
-            4.0: "Down by 3% to <4%",
-            5.0: "Down by 4% to <5%",
-            6.0: "Down by 5% or more",
-            7.0: None,
-            8.0: "Up by 1% or less",
-            9.0: "Up by 1% to <2%",
-            10.0: "Up by 2% to <3%",
-            11.0: "Up by 3% to <4%",
-            12.0: "Up by 4% to <5%",
-            13.0: "Up by 5% to <6%",
-            14.0: "Up by 6% to <7%",
-            15.0: "Up by 7% to <8%",
-            16.0: "Up by 8% to <9%",
-            17.0: "Up by 9% to <10%",
-            18.0: "Up by 10% or more",
-            19.0: "No idea",
-            20.0: "Up by 10% to <11%",
-            21.0: "Up by 11% to <12%",
-            22.0: "Up by 12% to <13%",
-            23.0: "Up by 13% to <14%",
-            24.0: "Up by 14% to <15%",
-            25.0: "Up by 15% or more"
-        }
-
-        # 2. Create a sorted list of tickvals and labels based on interpolated values
+        # Create a sorted list of tickvals and labels based on interpolated values
         sorted_items = sorted(
             ((code, val) for code, val in response_map_f64.items() if val is not None),
             key=lambda x: x[1]
@@ -212,11 +244,19 @@ def _(go, math, pd, pl, px):
         ticktext = [response_labels[code] for code, _ in sorted_items]
 
         # Create the line chart using the numeric quantile values.
+        question_titles = {
+            "q2a_agg1": "Inflation Expectations Quantiles (1 Year Ahead)",
+            "q2b_agg1": "Inflation Expectations Quantiles (2 Years Ahead)", 
+            "q2c_agg1": "Inflation Expectations Quantiles (5 Years Ahead)",
+            "q1b": "Price Perceptions Quantiles (Last 12 Months - q1b)",
+            "q1c": "Price Perceptions Quantiles (Last 12 Months - q1c)"
+        }
+
         fig = px.line(
             result_pd,
             x="date",
             y=["5th", "10th", "25th", "50th", "75th", "90th", "95th"],
-            title="Inflation Expectations Quantiles",
+            title=question_titles.get(question, f"{question} Quantiles"),
             markers=True,
         )
 
@@ -228,12 +268,11 @@ def _(go, math, pd, pl, px):
                 ticktext=ticktext,
                 tickfont=dict(size=10),
                 tickangle=30,  # Try 0 (default), 30, or 45 degrees
-                title="Inflation expectation",
+                title="Price perception/expectation",
             )
         )
 
         fig.show()
-
 
         # Convert the ordinal values to z-scores for analysis
         quantiles = ["5th", "10th", "25th", "50th", "75th", "90th", "95th"]
@@ -265,7 +304,7 @@ def _(go, math, pd, pl, px):
             )
 
         fig_zscore.update_layout(
-            title="Standardized Inflation Expectations by Quantile",
+            title=f"Standardized {question_titles.get(question, question)} by Quantile",
             xaxis_title="Date",
             yaxis_title="Z-score",
             legend_title="Quantile",
@@ -275,7 +314,7 @@ def _(go, math, pd, pl, px):
         fig_zscore.show()
 
         ### WRITE TO EXCEL
-        output_excel = f"ias_dist_analysis/inflation_attitudes_quantiles_discrete_{question}.xlsx"
+        output_excel = f"inflation_attitudes_quantiles_discrete_{question}.xlsx"
         result_pd.to_excel(output_excel, index=False)
     return (quantile_maker,)
 
@@ -299,6 +338,20 @@ def _(quantile_maker):
 def _(quantile_maker):
     # 5 Year ahead
     quantile_maker("q2c_agg1")
+    return
+
+
+@app.cell
+def _(quantile_maker):
+    # Price perceptions q1b
+    quantile_maker("q1b")
+    return
+
+
+@app.cell
+def _(quantile_maker):
+    # Price perceptions q1c
+    quantile_maker("q1c")
     return
 
 
@@ -331,7 +384,7 @@ def _(clean_ias, convert_yyyyqq_to_datetime, pl):
     df = pl.read_excel(
         # "../ias_analysis/data/individual-responses-xlsx.xlsx",
         # "../ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
-        "ias_analysis/data/Inflation Attitudes Survey Feb 2025.xlsx",
+        "data/individual-responses.xlsx",
         sheet_name="Dataset",
         columns=["yyyyqq", "age", "weight", "q2a_agg1"]
     )
