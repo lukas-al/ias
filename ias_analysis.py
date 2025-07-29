@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.14.13"
+__generated_with = "0.12.4"
 app = marimo.App(width="medium")
 
 
@@ -61,9 +61,9 @@ def _(Dict, Optional, Tuple, pd, pl):
         df = df.with_columns(
             [
                 pl.when(pl.col("age") == 8)
-                .then(1)
-                .when(pl.col("age") == 7)
                 .then(6)
+                .when(pl.col("age") == 7)
+                .then(1)
                 .otherwise(pl.col("age"))
                 .alias("age")
             ]
@@ -147,7 +147,12 @@ def _(Dict, Optional, Tuple, pd, pl):
             output[question] = pl.DataFrame(rows).sort("yyyyqq")
 
         return output["q2a_agg1"], output["q2b_agg1"], output["q2c_agg1"]
-    return clean_ias, convert_yyyyqq_to_datetime, grouped_median_unequal_widths
+    return (
+        clean_ias,
+        compute_grouped_medians_polars,
+        convert_yyyyqq_to_datetime,
+        grouped_median_unequal_widths,
+    )
 
 
 @app.cell
@@ -408,7 +413,7 @@ def _(
 ):
     # Create all analyses from the same base DataFrame
     analyses = {
-        "age": clean_ias_generic(ias_raw, "age"),
+        "age": clean_ias(ias_raw),  # Apply age recoding to remove structural break
         "work": clean_ias_generic(ias_raw, "work"),
         "class": clean_ias_generic(ias_raw, "class"),
         "tenure": clean_ias_generic(ias_raw, "tenure"),
@@ -635,7 +640,7 @@ def _(convert_yyyyqq_to_datetime, ias_clean, pl):
         "income": calc_q1b_proportions_by_category(ias_clean, "income"),
         "sreg": calc_q1b_proportions_by_category(ias_clean, "sreg"),
     }
-    return (q1b_results,)
+    return calc_q1b_proportions_by_category, q1b_results
 
 
 @app.cell
@@ -708,7 +713,7 @@ def _(age_map, plot_q1b_proportions, q1b_map, q1b_results):
                 age_map,
                 f"Proportion reporting '{age_response_label}' by age",
             )
-    return
+    return age_key_responses, age_response, age_response_label
 
 
 @app.cell
@@ -729,7 +734,7 @@ def _(emp_map, plot_q1b_proportions, q1b_map, q1b_results):
                 emp_map,
                 f"Proportion reporting '{emp_response_label}' by employment status",
             )
-    return
+    return emp_key_responses, emp_response, emp_response_label
 
 
 @app.cell
@@ -750,7 +755,7 @@ def _(class_mapping, plot_q1b_proportions, q1b_map, q1b_results):
                 class_mapping,
                 f"Proportion reporting '{class_response_label}' by class",
             )
-    return
+    return class_key_responses, class_response, class_response_label
 
 
 @app.cell
@@ -771,7 +776,7 @@ def _(income_map, plot_q1b_proportions, q1b_map, q1b_results):
                 income_map,
                 f"Proportion reporting '{income_response_label}' by income",
             )
-    return
+    return income_key_responses, income_response, income_response_label
 
 
 @app.cell
@@ -792,7 +797,7 @@ def _(plot_q1b_proportions, q1b_map, q1b_results, sreg_bands):
                 sreg_bands,
                 f"Proportion reporting '{region_response_label}' by region",
             )
-    return
+    return region_key_responses, region_response, region_response_label
 
 
 @app.cell
@@ -885,7 +890,7 @@ def _(convert_yyyyqq_to_datetime, ias_clean, pl):
         "income": calc_dk_proportions_by_category(ias_clean, "income"),
         "sreg": calc_dk_proportions_by_category(ias_clean, "sreg"),
     }
-    return (dk_results,)
+    return calc_dk_proportions_by_category, dk_results
 
 
 @app.cell
@@ -961,20 +966,31 @@ def _(
                 res_df, label_mapping=category_maps.get(cat), title=title
             )
             dk_figures[cat][hrz] = fig
-
-    return category_maps, category_titles, horizons, plot_dk_proportions
+    return (
+        cat,
+        category_maps,
+        category_titles,
+        dk_figures,
+        fig,
+        horizons,
+        hrz,
+        plot_dk_proportions,
+        res,
+        res_df,
+        title,
+    )
 
 
 @app.cell
 def _(mo):
     mo.md(
         r"""
-    # Alternate weight adjustment (CORRECT VERSION)
-    To correctly adjust for weights, we must:
-    - For each don't know, their vote isn't = 1. It needs to be adjusted by their weighting within the timestamp.
-    - This means dividing their value by the total weight
-    This is a simple weighting schema, no need to overcomplicate.
-    """
+        # Alternate weight adjustment (CORRECT VERSION)
+        To correctly adjust for weights, we must:
+        - For each don't know, their vote isn't = 1. It needs to be adjusted by their weighting within the timestamp.
+        - This means dividing their value by the total weight
+        This is a simple weighting schema, no need to overcomplicate.
+        """
     )
     return
 
@@ -1087,7 +1103,7 @@ def _(
 
 
     _()
-    return (weight_adjusted_dk_numbers,)
+    return calc_weight_adjusted_dk_by_cat, weight_adjusted_dk_numbers
 
 
 @app.cell
@@ -1229,7 +1245,7 @@ def _(
                 output[question][stat_type] = pl.DataFrame(rows).sort("yyyyqq")
 
         return output
-    return (comp_grouped_mean_median,)
+    return comp_grouped_mean_median, grouped_mean_unequal_widths
 
 
 @app.cell
@@ -1265,7 +1281,7 @@ def _(
     # Combine results
     for category in mean_median_results.keys():
         mean_median_results[category].update(q1b_mean_median_results[category])
-    return (mean_median_results,)
+    return category, df, mean_median_results, q1b_mean_median_results
 
 
 @app.cell
@@ -1318,7 +1334,7 @@ def _(category_maps, mean_median_results, pd):
             print("Mean and median results written to ias_responses_mean_median_by_cat.xlsx")
 
     write_mean_median_to_excel()
-    return
+    return (write_mean_median_to_excel,)
 
 
 @app.cell
@@ -1435,7 +1451,7 @@ def _(convert_yyyyqq_to_datetime, go, ias_clean, pd, pl):
 
     # Call the function with your dataset
     q17_responses_by_up_or_down2(ias_clean)
-    return
+    return q17_responses_by_up_or_down2, q2a_map_2
 
 
 @app.cell
@@ -1468,7 +1484,7 @@ def _(category_maps, dk_results, pd):
 
 
     dk_write_wrapper()
-    return
+    return (dk_write_wrapper,)
 
 
 @app.cell
@@ -1501,7 +1517,7 @@ def _(category_maps, median_results, pd):
 
 
     meds_write_wrapper()
-    return
+    return (meds_write_wrapper,)
 
 
 @app.cell
@@ -1590,7 +1606,7 @@ def _(category_maps, pd, q1b_map, q1b_results):
                 print(f"Written {sheets_written} individual response sheets for {category}")
 
     q1b_write_wrapper()
-    return
+    return (q1b_write_wrapper,)
 
 
 @app.cell
@@ -1705,7 +1721,7 @@ def _(pd, weight_adjusted_dk_numbers):
     write_results_to_excel2(
         weight_adjusted_dk_numbers, filename="weight_adjusted_dk_by_category.xlsx"
     )
-    return
+    return (write_results_to_excel2,)
 
 
 if __name__ == "__main__":
